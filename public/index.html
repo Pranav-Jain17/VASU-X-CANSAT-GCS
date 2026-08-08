@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VASU-X CANSAT GCS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+        body {
+            background-color: #020617;
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #020617;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 2px;
+        }
+
+        .view-tab {
+            display: none;
+            height: 100%;
+            overflow: hidden;
+            padding: 1rem;
+        }
+
+        .view-tab.active {
+            display: block;
+        }
+
+        .panel {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 0.5rem;
+        }
+
+        .data-label {
+            color: #64748b;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+
+        .data-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #e2e8f0;
+        }
+
+        #gnss-map {
+            height: 100%;
+            width: 100%;
+            background: #020617;
+            border-radius: 0.5rem;
+            z-index: 1;
+        }
+
+        .leaflet-layer,
+        .leaflet-control-zoom-in,
+        .leaflet-control-zoom-out,
+        .leaflet-control-attribution {
+            filter: invert(100%) hue-rotate(180deg) brightness(90%) contrast(90%) grayscale(20%);
+        }
+    </style>
+</head>
+
+<body class="flex h-screen w-screen overflow-hidden">
+
+    <aside class="w-96 bg-[#070b14] border-r border-[#1e293b] flex flex-col flex-shrink-0 z-20 overflow-hidden">
+        <div class="p-4 border-b border-[#1e293b] flex items-center justify-between bg-[#0f172a] shrink-0">
+            <div>
+                <h1 class="text-xl font-bold tracking-wider text-white">VASU-X</h1>
+                <p class="text-[10px] text-slate-400 font-mono" id="val-team">WAITING FOR LINK</p>
+            </div>
+            <div id="conn-status" class="w-3 h-3 rounded-full bg-slate-700"></div>
+        </div>
+
+        <div
+            class="p-4 border-b border-[#1e293b] flex flex-col items-center justify-center bg-gradient-to-b from-[#0f172a] to-transparent shrink-0">
+            <p class="data-label mb-1">Relative Altitude</p>
+            <div class="flex items-baseline gap-1">
+                <h2 class="text-5xl font-mono font-bold text-sky-400 tracking-tighter" id="val-alt">0.0</h2>
+                <span class="text-slate-500 font-mono text-xl">m</span>
+            </div>
+            <div class="mt-2 px-4 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-sm font-bold tracking-widest"
+                id="val-state">STANDBY</div>
+        </div>
+
+        <div class="flex-1 overflow-y-hidden p-3 space-y-3 flex flex-col justify-center">
+            <div class="grid grid-cols-2 gap-3 shrink-0">
+                <div class="panel p-3">
+                    <p class="data-label">Mission Time</p>
+                    <p class="data-val text-white" id="val-time">00:00:00</p>
+                </div>
+                <div class="panel p-3">
+                    <p class="data-label">Packet Count</p>
+                    <p class="data-val text-white" id="val-pkt">0</p>
+                </div>
+            </div>
+
+            <div class="panel p-3 grid grid-cols-2 gap-y-3 gap-x-2 shrink-0">
+                <div class="col-span-2 border-b border-[#1e293b] pb-1 mb-1">
+                    <p class="text-[10px] font-bold text-slate-300 tracking-wider">ENVIRONMENT</p>
+                </div>
+                <div>
+                    <p class="data-label">Pressure</p>
+                    <p class="data-val text-[13px]" id="val-press">0 Pa</p>
+                </div>
+                <div>
+                    <p class="data-label">Temperature</p>
+                    <p class="data-val text-[13px]" id="val-temp">0.0 °C</p>
+                </div>
+                <div>
+                    <p class="data-label">Voltage</p>
+                    <p class="data-val text-amber-400 text-[13px]" id="val-volt">0.00 V</p>
+                </div>
+                <div>
+                    <p class="data-label">Descent Rate</p>
+                    <p class="data-val text-[13px]" id="val-vel">0.0 m/s</p>
+                </div>
+            </div>
+
+            <div class="panel p-3 grid grid-cols-3 gap-y-3 gap-x-2 shrink-0">
+                <div class="col-span-3 border-b border-[#1e293b] pb-1 mb-1 flex justify-between">
+                    <p class="text-[10px] font-bold text-slate-300 tracking-wider">IMU / ATTITUDE</p>
+                    <p class="data-val text-xs text-sky-400" id="val-gyro">0.0 °/s</p>
+                </div>
+                <div>
+                    <p class="data-label text-red-400">AX</p>
+                    <p class="data-val text-[13px]" id="val-ax">0.00</p>
+                </div>
+                <div>
+                    <p class="data-label text-emerald-400">AY</p>
+                    <p class="data-val text-[13px]" id="val-ay">0.00</p>
+                </div>
+                <div>
+                    <p class="data-label text-sky-400">AZ</p>
+                    <p class="data-val text-[13px]" id="val-az">0.00</p>
+                </div>
+
+                <div>
+                    <p class="data-label text-red-400">MX</p>
+                    <p class="data-val text-[13px]" id="val-mx">0.0</p>
+                </div>
+                <div>
+                    <p class="data-label text-emerald-400">MY</p>
+                    <p class="data-val text-[13px]" id="val-my">0.0</p>
+                </div>
+                <div>
+                    <p class="data-label text-sky-400">MZ</p>
+                    <p class="data-val text-[13px]" id="val-mz">0.0</p>
+                </div>
+            </div>
+
+            <div class="panel p-3 grid grid-cols-2 gap-y-3 gap-x-2 shrink-0">
+                <div class="col-span-2 border-b border-[#1e293b] pb-1 mb-1 flex justify-between">
+                    <p class="text-[10px] font-bold text-slate-300 tracking-wider">GNSS LINK</p>
+                    <p class="data-val text-xs text-emerald-400" id="val-sats">0 Sats</p>
+                </div>
+                <div>
+                    <p class="data-label">Latitude</p>
+                    <p class="data-val text-[13px]" id="val-lat">0.00000</p>
+                </div>
+                <div>
+                    <p class="data-label">Longitude</p>
+                    <p class="data-val text-[13px]" id="val-lng">0.00000</p>
+                </div>
+                <div>
+                    <p class="data-label">GNSS Alt</p>
+                    <p class="data-val text-[13px]" id="val-galt">0.0 m</p>
+                </div>
+                <div>
+                    <p class="data-label">GNSS Time</p>
+                    <p class="data-val text-[13px]" id="val-gtime">00:00:00</p>
+                </div>
+            </div>
+
+            <div class="panel p-3 grid grid-cols-3 gap-y-3 gap-x-2 shrink-0">
+                <div class="col-span-3 border-b border-[#1e293b] pb-1 mb-1">
+                    <p class="text-[10px] font-bold text-slate-300 tracking-wider">NICLA PAYLOAD</p>
+                </div>
+                <div>
+                    <p class="data-label">AQI</p>
+                    <p class="data-val text-[13px]" id="val-aqi">0</p>
+                </div>
+                <div>
+                    <p class="data-label">Humid</p>
+                    <p class="data-val text-[13px]" id="val-hum">0%</p>
+                </div>
+                <div>
+                    <p class="data-label">Gas</p>
+                    <p class="data-val text-[11px]" id="val-gas">0Ω</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <div class="flex-1 flex flex-col min-w-0 bg-[#020617] h-screen overflow-hidden">
+        <header class="h-16 border-b border-[#1e293b] bg-[#070b14] flex items-center justify-between px-4 shrink-0">
+            <div class="flex gap-1 bg-[#0f172a] p-1 rounded-lg border border-[#1e293b]">
+                <button onclick="switchTab('tab-spatial')" id="btn-tab-spatial"
+                    class="nav-btn px-4 py-1.5 text-sm font-medium rounded-md bg-sky-600 text-white transition-all">Spatial
+                    View</button>
+                <button onclick="switchTab('tab-charts')" id="btn-tab-charts"
+                    class="nav-btn px-4 py-1.5 text-sm font-medium rounded-md text-slate-400 hover:text-white transition-all">Telemetry
+                    Charts</button>
+                <button onclick="switchTab('tab-cmd')" id="btn-tab-cmd"
+                    class="nav-btn px-4 py-1.5 text-sm font-medium rounded-md text-slate-400 hover:text-white transition-all">Command
+                    & Log</button>
+            </div>
+            <button onclick="downloadCSV()"
+                class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded transition border border-slate-700"><i
+                    class="fa-solid fa-download mr-2"></i>EXPORT LOG</button>
+        </header>
+
+        <main id="tab-spatial" class="view-tab active">
+            <div class="grid grid-cols-2 gap-4 h-full">
+                <div class="panel flex flex-col relative overflow-hidden h-full">
+                    <div class="absolute top-4 left-4 z-10 flex gap-2">
+                        <div class="bg-black/50 border border-slate-700/50 rounded px-3 py-2 backdrop-blur">
+                            <p class="data-label">Pitch</p>
+                            <p class="font-mono text-sm text-white" id="att-pitch">0.0°</p>
+                        </div>
+                        <div class="bg-black/50 border border-slate-700/50 rounded px-3 py-2 backdrop-blur">
+                            <p class="data-label">Roll</p>
+                            <p class="font-mono text-sm text-white" id="att-roll">0.0°</p>
+                        </div>
+                    </div>
+                    <div id="three-container"
+                        class="w-full h-full cursor-move bg-gradient-to-b from-[#070b14] to-[#0f172a]"></div>
+                </div>
+                <div class="panel relative flex flex-col h-full overflow-hidden p-1">
+                    <div id="gnss-map" class="flex-1 rounded"></div>
+                </div>
+            </div>
+        </main>
+
+        <main id="tab-charts" class="view-tab overflow-y-auto">
+            <div class="grid grid-cols-2 gap-4 h-full min-h-[600px]">
+                <div class="panel p-4 flex flex-col min-h-[300px]">
+                    <h3 class="data-label mb-2">Altitude Profile</h3>
+                    <div class="flex-1 relative w-full"><canvas id="chart-alt"></canvas></div>
+                </div>
+                <div class="panel p-4 flex flex-col min-h-[300px]">
+                    <h3 class="data-label mb-2">Atmospherics</h3>
+                    <div class="flex-1 relative w-full"><canvas id="chart-env"></canvas></div>
+                </div>
+                <div class="panel p-4 flex flex-col min-h-[300px]">
+                    <h3 class="data-label mb-2">Z-Axis Acceleration</h3>
+                    <div class="flex-1 relative w-full"><canvas id="chart-accel"></canvas></div>
+                </div>
+                <div class="panel p-4 flex flex-col min-h-[300px]">
+                    <h3 class="data-label mb-2">Spin Rate</h3>
+                    <div class="flex-1 relative w-full"><canvas id="chart-gyro"></canvas></div>
+                </div>
+            </div>
+        </main>
+
+        <main id="tab-cmd" class="view-tab">
+            <div class="grid grid-cols-3 gap-4 h-full min-h-0">
+                <div class="col-span-2 panel flex flex-col p-4 h-full min-h-0">
+                    <h3 class="data-label mb-3 shrink-0">Live Packet Stream</h3>
+                    <div class="flex-1 overflow-auto border border-[#1e293b] rounded bg-[#070b14] min-h-0">
+                        <table class="w-full text-xs text-left whitespace-nowrap font-mono text-slate-300">
+                            <thead class="bg-[#0f172a] text-slate-500 sticky top-0 shadow">
+                                <tr>
+                                    <th class="p-3">PKT</th>
+                                    <th class="p-3">TIME</th>
+                                    <th class="p-3">ALT</th>
+                                    <th class="p-3">STATE</th>
+                                    <th class="p-3">SATS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-body" class="divide-y divide-[#1e293b]"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="col-span-1 flex flex-col gap-4 h-full min-h-0">
+                    <div class="panel p-4 flex flex-col flex-1 min-h-0">
+                        <h3 class="data-label mb-3 shrink-0">Uplink Console</h3>
+                        <div id="terminal-output"
+                            class="flex-1 bg-[#020617] rounded border border-[#1e293b] p-3 overflow-y-auto font-mono text-[11px] flex flex-col gap-1.5 text-slate-400 min-h-0">
+                            <div>VASU-X OS Ready.</div>
+                        </div>
+                        <div class="mt-3 flex gap-2 shrink-0">
+                            <input type="text" id="cmd-input" placeholder="CMD..."
+                                class="w-full bg-[#020617] border border-[#1e293b] rounded px-3 text-white font-mono text-xs focus:outline-none focus:border-sky-500">
+                            <button onclick="sendCustomCommand()"
+                                class="px-4 py-2 bg-sky-600 text-white font-bold rounded text-xs hover:bg-sky-500">TX</button>
+                        </div>
+                    </div>
+
+                    <div class="panel p-4 grid grid-cols-2 gap-2 shrink-0">
+                        <button onclick="sendCommand('CMD,CAL_ALT')"
+                            class="py-3 bg-slate-800 hover:bg-slate-700 rounded text-xs font-bold text-white border border-slate-700 transition">Zero
+                            Alt</button>
+                        <button onclick="sendCommand('CMD,SIM_ENABLE')"
+                            class="py-3 bg-slate-800 hover:bg-slate-700 rounded text-xs font-bold text-white border border-slate-700 transition">Test
+                            Mode</button>
+                        <button onclick="sendCommand('CMD,FORCE_DEPLOY')"
+                            class="col-span-2 py-3 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 rounded text-xs font-bold transition">Force
+                            Deploy</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="./app.js"></script>
+</body>
+
+</html>
